@@ -1,0 +1,12 @@
+cff-version: 1.2.0
+message: If you use this software, please cite it.
+type: software
+title: lookahead-lint
+abstract: Static analyzer that flags look-ahead bias and target leakage idioms in quantitative research code
+authors:
+  - family-names: Mouler
+    given-names: Bert
+license: MIT
+repository-code: https://github.com/bmouler/lookahead-lint
+version: 1.0.0
+date-released: "2026-08-12"

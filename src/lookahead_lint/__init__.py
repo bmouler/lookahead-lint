@@ -21,7 +21,7 @@ from .reporter import FORMATS, SCHEMA_VERSION, render
 from .rules import ALL_CODES, RULES, Finding, Rule, run_checks
 from .suppression import Suppressions, collect_suppressions
 
-__version__ = "0.1.0"
+__version__ = "1.0.0"
 
 __all__ = [
     "ALL_CODES",

@@ -1,6 +1,11 @@
 # lookahead-lint
 
-[![CI](https://github.com/bmouler/lookahead-lint/actions/workflows/ci.yml/badge.svg)](https://github.com/bmouler/lookahead-lint/actions/workflows/ci.yml) [![branch coverage](https://img.shields.io/badge/branch%20coverage-100%25-brightgreen)](https://github.com/bmouler/lookahead-lint/actions/workflows/ci.yml) [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/) [![MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![CI](https://github.com/bmouler/lookahead-lint/actions/workflows/ci.yml/badge.svg)](https://github.com/bmouler/lookahead-lint/actions/workflows/ci.yml)
+![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)
+![Types](https://img.shields.io/badge/types-mypy%20strict-blue)
+![Mutation](https://img.shields.io/badge/mutation-98%25%20killed-brightgreen)
+![Python](https://img.shields.io/badge/python-3.11%2B-blue)
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 A static analyzer that flags look-ahead bias and target leakage in Python and Jupyter research
 code, using the standard library only and nothing else.
@@ -15,14 +20,19 @@ anything it cannot decide from the syntax it leaves alone.
 
 ## Install
 
-Not on PyPI. Clone the repository and install it in place:
+Install the stable release from PyPI:
 
-```
-pip install -e .
+```console
+python -m pip install lookahead-lint
 ```
 
-Python 3.11 or newer. There are no runtime dependencies; `pytest` and `ruff` are needed only to
-run the test suite.
+For editable development, clone the repository and include the development tools:
+
+```console
+python -m pip install -e ".[dev]"
+```
+
+Python 3.11 or newer. There are no runtime dependencies.
 
 ## Quickstart
 
@@ -136,6 +146,10 @@ $ lookahead-lint examples/leaky_research.py --format json --select LA004,LA005
 
 ## How it works
 
+```mermaid
+flowchart LR; SRC[research files / notebooks] --> AST[ast parse, no execution]; AST --> RU[7 rule visitors LA001–LA007]; RU --> SUP[suppressions + config]; SUP --> REP[report]; REP --> OUT[text / json / github annotations]
+```
+
 Each file is parsed with `ast` and walked by one `NodeVisitor` per rule. No code is imported and
 nothing is executed, so running the linter on someone else's research is safe and instant.
 
@@ -214,6 +228,31 @@ always skipped.
 A file that fails to parse is reported with its `SyntaxError` position and does not stop the run;
 the remaining files are still analyzed and the run ends with exit code 2. Silently skipping an
 unparseable file would be the worst possible behaviour for a tool whose value is coverage.
+
+## Verification
+
+The deterministic property suite exercises rule detection, clean-code composition, analyzer purity,
+and every output format. Static types are checked with strict mypy, and CI enforces 100% statement
+and branch coverage on Linux and macOS with Python 3.11–3.13.
+
+### Mutation testing
+
+Reproduce the mutation baseline from the repository root:
+
+```console
+source .venv/bin/activate
+mutmut run
+mutmut results
+```
+
+Current baseline: **1,109 of 1,122 mutants killed (98.84%; 98% floor)**, with zero suspicious
+results or timeouts. The 13 survivors are reviewed runtime-equivalent mutations:
+
+| Equivalent group | Count | Why behavior is identical |
+|---|---:|---|
+| `typing.cast` target changes | 9 | `typing.cast` returns its value unchanged at runtime. |
+| `ast.parse` filename metadata | 2 | Parse failures are normalized into `LintError` using the separately supplied path. |
+| Explicit `detail=None` removal | 2 | The report helper's default is already `None`, producing the same `Finding`. |
 
 ## Limitations
 
