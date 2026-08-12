@@ -10,6 +10,8 @@
 A static analyzer that flags look-ahead bias and target leakage in Python and Jupyter research
 code, using the standard library only and nothing else.
 
+Try it in your browser with the [zero-upload playground](https://bmouler.github.io/lookahead-lint/).
+
 Look-ahead bias does not announce itself. A backtest with `.shift(-1)` in the feature block or a
 scaler fitted before the split produces a beautiful equity curve and then loses money in
 production, because the model was scored on information it could not have had. The idioms that
