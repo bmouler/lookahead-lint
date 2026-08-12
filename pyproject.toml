@@ -30,7 +30,7 @@ classifiers = [
 dependencies = []
 
 [project.optional-dependencies]
-dev = ["pytest", "pytest-cov", "ruff"]
+dev = ["pytest", "pytest-cov", "ruff", "hypothesis>=6.100"]
 
 [project.urls]
 Homepage = "https://github.com/bmouler/lookahead-lint"

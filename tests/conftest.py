@@ -7,10 +7,17 @@ from collections.abc import Callable, Iterable
 from pathlib import Path
 
 import pytest
+from hypothesis import settings
 
 from lookahead_lint import Finding, analyze_source
 
 EXAMPLES = Path(__file__).resolve().parents[1] / "examples"
+
+settings.register_profile(
+    "det",
+    settings(max_examples=200, derandomize=True, deadline=None),
+)
+settings.load_profile("det")
 
 
 @pytest.fixture(scope="session")
