@@ -10,8 +10,10 @@ from __future__ import annotations
 import ast
 import json
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 __all__ = ["NotebookError", "NotebookSource", "load_notebook", "notebook_source"]
 
@@ -92,20 +94,26 @@ def notebook_source(text: str, name: str = "<notebook>") -> NotebookSource:
         NotebookError: If the JSON is malformed or has no ``cells`` list.
     """
     try:
-        document = json.loads(text)
+        document_value = cast(object, json.loads(text))
     except json.JSONDecodeError as error:
         raise NotebookError(
             f"{name}: invalid notebook JSON: {error.msg} at line {error.lineno}"
         ) from error
-    if not isinstance(document, dict) or not isinstance(document.get("cells"), list):
+    if not isinstance(document_value, dict):
         raise NotebookError(f"{name}: not a notebook document (no 'cells' list)")
+    document = cast(Mapping[str, object], document_value)
+    cells_value = document.get("cells")
+    if not isinstance(cells_value, list):
+        raise NotebookError(f"{name}: not a notebook document (no 'cells' list)")
+    cells = cast(list[object], cells_value)
 
     lines: list[str] = []
     line_map: list[tuple[int, int]] = []
     cell_number = 0
-    for index, cell in enumerate(document["cells"]):
-        if not isinstance(cell, dict):
+    for index, cell_value in enumerate(cells):
+        if not isinstance(cell_value, dict):
             raise NotebookError(f"{name}: cell {index} is not an object")
+        cell = cast(Mapping[str, object], cell_value)
         if cell.get("cell_type") != "code":
             continue
         cell_number += 1
@@ -120,12 +128,12 @@ def notebook_source(text: str, name: str = "<notebook>") -> NotebookSource:
     return NotebookSource("\n".join(lines) + "\n", tuple(line_map))
 
 
-def _cell_text(cell: dict[str, object], name: str, index: int) -> str:
+def _cell_text(cell: Mapping[str, object], name: str, index: int) -> str:
     source = cell.get("source", "")
     if isinstance(source, str):
         return source
     if isinstance(source, list) and all(isinstance(part, str) for part in source):
-        return "".join(source)
+        return "".join(cast(list[str], source))
     raise NotebookError(f"{name}: cell {index} has an unreadable 'source' field")
 
 

@@ -85,9 +85,14 @@ def analyze_source(
     except (SyntaxError, ValueError) as error:
         # CPython reports a rejected source as SyntaxError on some versions and a
         # plain ValueError on others; both mean the same thing to a caller.
-        line = getattr(error, "lineno", None) or 1
-        col = getattr(error, "offset", None) or 1
-        detail = getattr(error, "msg", None) or str(error)
+        if isinstance(error, SyntaxError):
+            line = error.lineno or 1
+            col = error.offset or 1
+            detail = error.msg
+        else:
+            line = 1
+            col = 1
+            detail = str(error)
         message = f"{type(error).__name__}: {detail}"
         return [], [_locate_error(LintError(path, line, col, message), notebook)]
 

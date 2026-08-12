@@ -24,6 +24,21 @@ def test_run_checks_rejects_unknown_codes() -> None:
         run_checks(tree, Path("snippet.py"), ["LA999"])
 
 
+def test_analyze_source_reports_value_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    from lookahead_lint import analyze_source, analyzer
+
+    def reject_source(*args: object, **kwargs: object) -> None:
+        raise ValueError("embedded null byte")
+
+    monkeypatch.setattr(analyzer.ast, "parse", reject_source)
+    findings, errors = analyze_source("x = 1", Path("snippet.py"))
+
+    assert findings == []
+    assert len(errors) == 1
+    assert errors[0].line == errors[0].col == 1
+    assert errors[0].message == "ValueError: embedded null byte"
+
+
 def test_indirect_call_expression_is_not_treated_as_a_named_call(codes_for) -> None:
     assert codes_for("factory()()") == []
 

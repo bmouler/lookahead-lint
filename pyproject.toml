@@ -30,7 +30,7 @@ classifiers = [
 dependencies = []
 
 [project.optional-dependencies]
-dev = ["pytest", "pytest-cov", "ruff", "hypothesis>=6.100"]
+dev = ["pytest", "pytest-cov", "ruff", "hypothesis>=6.100", "mypy>=1.14"]
 
 [project.urls]
 Homepage = "https://github.com/bmouler/lookahead-lint"
@@ -56,6 +56,11 @@ source = ["lookahead_lint"]
 fail_under = 100
 show_missing = true
 skip_covered = true
+
+[tool.mypy]
+strict = true
+files = ["src"]
+python_version = "3.11"
 
 [build-system]
 requires = ["hatchling"]

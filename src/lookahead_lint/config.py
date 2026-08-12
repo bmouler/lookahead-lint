@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import tomllib
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from fnmatch import fnmatch
 from pathlib import Path
+from typing import cast
 
 from .rules import ALL_CODES
 
@@ -156,18 +157,21 @@ def load_config(pyproject: Path) -> Config:
             holds values of the wrong type.
     """
     try:
-        data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+        raw_data = cast(dict[str, object], tomllib.loads(pyproject.read_text(encoding="utf-8")))
+        data: Mapping[str, object] = raw_data
     except (OSError, UnicodeDecodeError) as error:
         raise ConfigError(f"{pyproject}: cannot read: {error}") from error
     except tomllib.TOMLDecodeError as error:
         raise ConfigError(f"{pyproject}: invalid TOML: {error}") from error
 
-    tool = data.get("tool")
-    table = tool.get(TABLE) if isinstance(tool, dict) else None
-    if table is None:
+    tool_value = data.get("tool")
+    tool = cast(Mapping[str, object], tool_value) if isinstance(tool_value, dict) else None
+    table_value = tool.get(TABLE) if tool is not None else None
+    if table_value is None:
         return Config()
-    if not isinstance(table, dict):
+    if not isinstance(table_value, dict):
         raise ConfigError(f"{pyproject}: [tool.{TABLE}] must be a table")
+    table = cast(Mapping[str, object], table_value)
     unknown = sorted(set(table) - _KEYS)
     if unknown:
         allowed = ", ".join(sorted(_KEYS))
@@ -178,7 +182,7 @@ def load_config(pyproject: Path) -> Config:
     ignore_raw = _string_list(table, "ignore", pyproject)
     exclude_raw = _string_list(table, "exclude", pyproject)
     select = None if select_raw is None else _validate_codes(select_raw, f"{origin}.select")
-    ignore = frozenset()
+    ignore: frozenset[str] = frozenset()
     if ignore_raw is not None:
         ignore = _validate_codes(ignore_raw, f"{origin}.ignore")
     return Config(
@@ -189,13 +193,17 @@ def load_config(pyproject: Path) -> Config:
     )
 
 
-def _string_list(table: dict[str, object], key: str, pyproject: Path) -> list[str] | None:
+def _string_list(
+    table: Mapping[str, object],
+    key: str,
+    pyproject: Path,
+) -> list[str] | None:
     value = table.get(key)
     if value is None:
         return None
     if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
         raise ConfigError(f"{pyproject}: [tool.{TABLE}].{key} must be a list of strings")
-    return [item for item in value if isinstance(item, str)]
+    return cast(list[str], value)
 
 
 def _validate_codes(codes: Iterable[str], origin: str) -> frozenset[str]:

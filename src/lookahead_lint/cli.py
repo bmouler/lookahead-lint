@@ -28,6 +28,16 @@ _EPILOG = "rules:\n" + "\n".join(
 )
 
 
+class _Arguments(argparse.Namespace):
+    """Typed command-line arguments populated by :mod:`argparse`."""
+
+    paths: list[str]
+    output_format: str
+    select: list[str] | None
+    ignore: list[str] | None
+    no_config: bool
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Construct the argument parser.
 
@@ -88,7 +98,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     Returns:
         :data:`EXIT_OK`, :data:`EXIT_FINDINGS`, or :data:`EXIT_ERROR`.
     """
-    args = build_parser().parse_args(argv)
+    args = _Arguments()
+    build_parser().parse_args(argv, namespace=args)
     paths = [Path(path) for path in args.paths]
     try:
         base = Config() if args.no_config else discover_config(paths)

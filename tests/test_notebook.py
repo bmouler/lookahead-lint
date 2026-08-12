@@ -117,6 +117,11 @@ def test_json_that_is_not_a_notebook_is_reported_as_an_error(tmp_path: Path) -> 
     assert "not a notebook document" in errors[0].message
 
 
+def test_json_root_must_be_an_object() -> None:
+    with pytest.raises(NotebookError, match="not a notebook document"):
+        notebook_source("[]")
+
+
 def test_unreadable_cell_source_is_rejected() -> None:
     document = {"cells": [{"cell_type": "code", "source": 42}]}
     with pytest.raises(NotebookError, match="unreadable 'source'"):

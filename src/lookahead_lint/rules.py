@@ -410,7 +410,7 @@ class FutureRowIndex(_Checker):
     def _is_future_offset(self, index: ast.expr) -> bool:
         if not isinstance(index, ast.BinOp) or not isinstance(index.op, ast.Add):
             return False
-        active = frozenset().union(*self._loop_vars) if self._loop_vars else frozenset()
+        active = {name for loop_vars in self._loop_vars for name in loop_vars}
         for operand, other in ((index.left, index.right), (index.right, index.left)):
             if isinstance(operand, ast.Name) and operand.id in active:
                 # `i + -1` is a look-behind written oddly; only positive offsets look ahead.
