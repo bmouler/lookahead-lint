@@ -89,6 +89,17 @@ def test_locate_rejects_a_non_positive_line() -> None:
         extracted.locate(0)
 
 
+def test_load_notebook_rejects_non_utf8_bytes(tmp_path: Path) -> None:
+    path = tmp_path / "non_utf8.ipynb"
+    path.write_bytes(b'{"cells": []}\xff')
+
+    findings, errors = analyze_file(path)
+
+    assert findings == []
+    assert len(errors) == 1
+    assert "not valid UTF-8" in errors[0].message
+
+
 def test_invalid_json_is_reported_as_an_error(tmp_path: Path) -> None:
     path = tmp_path / "broken.ipynb"
     path.write_text('{"cells": [', encoding="utf-8")
@@ -112,6 +123,11 @@ def test_unreadable_cell_source_is_rejected() -> None:
         notebook_source(json.dumps(document))
 
 
+def test_non_object_cell_is_rejected() -> None:
+    with pytest.raises(NotebookError, match="cell 0 is not an object"):
+        notebook_source('{"cells": [null]}')
+
+
 def test_syntax_error_in_a_cell_maps_to_cell_coordinates(tmp_path: Path) -> None:
     path = tmp_path / "bad.ipynb"
     path.write_text(_notebook(("code", "a = 1"), ("code", "def broken(:\n    pass")), "utf-8")
@@ -119,3 +135,4 @@ def test_syntax_error_in_a_cell_maps_to_cell_coordinates(tmp_path: Path) -> None
     assert findings == []
     assert len(errors) == 1
     assert (errors[0].cell, errors[0].cell_line) == (2, 1)
+    assert errors[0].location == "cell 2, line 1:12"

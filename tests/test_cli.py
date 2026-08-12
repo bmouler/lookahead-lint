@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -18,6 +20,25 @@ def _run(capsys: pytest.CaptureFixture[str], *argv: str) -> tuple[int, str, str]
     return code, captured.out, captured.err
 
 
+def test_installed_cli_finds_a_leak_from_outside_the_repository(tmp_path: Path) -> None:
+    target = tmp_path / "leaky.py"
+    target.write_text("target = close.shift(-1)\n", encoding="utf-8")
+    executable = Path(sys.executable).with_name("lookahead-lint")
+
+    completed = subprocess.run(
+        [str(executable), str(target), "--no-config"],
+        cwd=tmp_path,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == EXIT_FINDINGS
+    assert "LA001" in completed.stdout
+    assert str(target) in completed.stdout
+    assert completed.stderr == ""
+
+
 def test_clean_example_exits_zero(capsys: pytest.CaptureFixture[str], examples: Path) -> None:
     code, out, err = _run(capsys, str(examples / "clean_research.py"), "--no-config")
     assert code == EXIT_OK
@@ -25,10 +46,36 @@ def test_clean_example_exits_zero(capsys: pytest.CaptureFixture[str], examples: 
     assert err == ""
 
 
+def test_clean_github_output_is_not_printed(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    target = tmp_path / "clean.py"
+    target.write_text("value = close.shift(1)\n", encoding="utf-8")
+
+    code, out, err = _run(capsys, str(target), "--no-config", "--format", "github")
+
+    assert code == EXIT_OK
+    assert out == ""
+    assert err == ""
+
+
 def test_leaky_example_exits_one(capsys: pytest.CaptureFixture[str], examples: Path) -> None:
     code, out, _ = _run(capsys, str(examples / "leaky_research.py"), "--no-config")
     assert code == EXIT_FINDINGS
     assert "9 findings in 1 file (1 file checked)" in out
+
+
+def test_repeated_file_path_is_checked_once(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    target = tmp_path / "model.py"
+    target.write_text(LEAK, encoding="utf-8")
+
+    code, out, err = _run(capsys, str(target), str(target), "--no-config")
+
+    assert code == EXIT_FINDINGS
+    assert "2 findings in 1 file (1 file checked)" in out
+    assert err == ""
 
 
 def test_directory_recursion_covers_python_and_notebooks(
@@ -104,6 +151,19 @@ def test_undecodable_file_is_reported(capsys: pytest.CaptureFixture[str], tmp_pa
     code, out, _ = _run(capsys, str(tmp_path), "--no-config")
     assert code == EXIT_ERROR
     assert "cannot read" in out or "cannot decode" in out
+
+
+def test_unknown_source_encoding_is_reported_as_a_decode_error(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    target = tmp_path / "unknown_encoding.py"
+    target.write_bytes(b"# coding: definitely-not-an-encoding\nvalue = 1\n")
+
+    code, out, err = _run(capsys, str(target), "--no-config")
+
+    assert code == EXIT_ERROR
+    assert "cannot decode: unknown encoding" in out
+    assert err == ""
 
 
 def test_github_format_emits_annotations(

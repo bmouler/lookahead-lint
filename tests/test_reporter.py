@@ -145,6 +145,24 @@ def test_github_annotates_notebook_cells_in_the_message() -> None:
     assert "::[cell 2, line 3] negative shift" in render_github(report)
 
 
+def test_github_annotates_notebook_errors_in_the_message() -> None:
+    report = Report(
+        errors=(
+            LintError(
+                Path("broken.ipynb"),
+                8,
+                2,
+                "SyntaxError: invalid syntax",
+                cell=3,
+                cell_line=4,
+            ),
+        ),
+        files_checked=1,
+    )
+
+    assert "::[cell 3, line 4] SyntaxError: invalid syntax" in render_github(report)
+
+
 def test_github_output_is_empty_for_a_clean_run() -> None:
     assert render_github(Report(files_checked=2)) == ""
 

@@ -1,6 +1,6 @@
 # lookahead-lint
 
-[![ci](https://github.com/bmouler/lookahead-lint/actions/workflows/ci.yml/badge.svg)](https://github.com/bmouler/lookahead-lint/actions/workflows/ci.yml)
+[![CI](https://github.com/bmouler/lookahead-lint/actions/workflows/ci.yml/badge.svg)](https://github.com/bmouler/lookahead-lint/actions/workflows/ci.yml) [![branch coverage](https://img.shields.io/badge/branch%20coverage-100%25-brightgreen)](https://github.com/bmouler/lookahead-lint/actions/workflows/ci.yml) [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/) [![MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 A static analyzer that flags look-ahead bias and target leakage in Python and Jupyter research
 code, using the standard library only and nothing else.

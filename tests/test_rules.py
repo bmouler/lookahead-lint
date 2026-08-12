@@ -24,6 +24,10 @@ def test_run_checks_rejects_unknown_codes() -> None:
         run_checks(tree, Path("snippet.py"), ["LA999"])
 
 
+def test_indirect_call_expression_is_not_treated_as_a_named_call(codes_for) -> None:
+    assert codes_for("factory()()") == []
+
+
 @pytest.mark.parametrize(
     "source",
     [
@@ -48,6 +52,10 @@ def test_la001_fires_on_negative_shift(codes_for, source: str) -> None:
 )
 def test_la001_stays_quiet_on_backward_shift(codes_for, source: str) -> None:
     assert codes_for(source) == []
+
+
+def test_la001_stays_quiet_on_negative_boolean_literal(codes_for) -> None:
+    assert codes_for("close.shift(-True)") == []
 
 
 @pytest.mark.parametrize(
@@ -120,6 +128,20 @@ def test_la004_fires_at_module_scope(codes_for) -> None:
         train, test = train_test_split(matrix, shuffle=False)
         """
     ) == ["LA004"]
+
+
+def test_la004_checks_async_function_and_class_scopes(codes_for) -> None:
+    assert codes_for(
+        """
+            class Pipeline:
+                scaler.fit(data)
+                train_test_split(data, shuffle=False)
+
+            async def prepare(data):
+                scaler.fit_transform(data)
+                train_test_split(data, shuffle=False)
+            """
+    ) == ["LA004", "LA004"]
 
 
 @pytest.mark.parametrize(
@@ -197,6 +219,23 @@ def test_la005_stays_quiet_on_ordered_split(codes_for, source: str) -> None:
     ],
 )
 def test_la006_fires_on_future_row_index(codes_for, source: str) -> None:
+    assert codes_for(source) == ["LA006"]
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        """
+        async def consume(rows):
+            async for i in rows:
+                value = close[i + 1]
+        """,
+        "values = {close[i + 1] for i in range(n)}",
+        "values = {i: close[i + 1] for i in range(n)}",
+        "values = (close[i + 1] for i in range(n))",
+    ],
+)
+def test_la006_covers_every_loop_form(codes_for, source: str) -> None:
     assert codes_for(source) == ["LA006"]
 
 

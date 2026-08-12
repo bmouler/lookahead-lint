@@ -83,6 +83,44 @@ def test_invalid_toml_is_rejected(tmp_path: Path) -> None:
         load_config(path)
 
 
+def test_unreadable_pyproject_is_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    path = tmp_path / "pyproject.toml"
+    path.write_text("[tool.lookahead_lint]\n", encoding="utf-8")
+
+    def deny_read(*args: object, **kwargs: object) -> str:
+        raise OSError("permission denied")
+
+    monkeypatch.setattr(Path, "read_text", deny_read)
+
+    with pytest.raises(ConfigError, match="cannot read: permission denied"):
+        load_config(path)
+
+
+def test_lookahead_lint_value_must_be_a_table(tmp_path: Path) -> None:
+    path = _write_pyproject(tmp_path, 'tool = { lookahead_lint = "LA001" }\n')
+
+    with pytest.raises(ConfigError, match=r"\[tool\.lookahead_lint\] must be a table"):
+        load_config(path)
+
+
+def test_empty_ignore_list_is_loaded(tmp_path: Path) -> None:
+    path = _write_pyproject(tmp_path, "[tool.lookahead_lint]\nignore = []\n")
+
+    config = load_config(path)
+
+    assert config.ignore == frozenset()
+    assert config.source == path
+
+
+def test_omitted_ignore_uses_the_default_empty_set(tmp_path: Path) -> None:
+    path = _write_pyproject(tmp_path, '[tool.lookahead_lint]\nselect = ["LA001"]\n')
+
+    config = load_config(path)
+
+    assert config.ignore == frozenset()
+    assert config.enabled_codes() == frozenset({"LA001"})
+
+
 def test_discovery_walks_up_to_the_nearest_table(tmp_path: Path) -> None:
     _write_pyproject(tmp_path, '[tool.lookahead_lint]\nignore = ["LA005"]\n')
     nested = tmp_path / "research" / "signals"

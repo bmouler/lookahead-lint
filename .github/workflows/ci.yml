@@ -25,4 +25,4 @@ jobs:
       - name: Format check
         run: ruff format --check .
       - name: Test
-        run: python -m pytest -q
+        run: python -m pytest --cov=lookahead_lint --cov-branch --cov-report=term-missing --cov-fail-under=100 -q
