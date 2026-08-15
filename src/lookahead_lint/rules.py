@@ -9,7 +9,7 @@ stays silent.
 from __future__ import annotations
 
 import ast
-from collections.abc import Iterable, Iterator, Sequence
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import ClassVar
@@ -143,27 +143,10 @@ LA007 = Rule(
 )
 
 
-class _Checker(ast.NodeVisitor):
-    """Base class carrying the reporting plumbing shared by every rule."""
+class _Checker:
+    """Rule metadata used to build the public catalogue."""
 
     rule: ClassVar[Rule]
-
-    def __init__(self, path: Path) -> None:
-        self.path = path
-        self.findings: list[Finding] = []
-
-    def _report(self, node: ast.expr, detail: str | None = None) -> None:
-        message = self.rule.message if detail is None else f"{self.rule.message} [{detail}]"
-        self.findings.append(
-            Finding(
-                path=self.path,
-                line=node.lineno,
-                col=node.col_offset + 1,
-                end_line=node.end_lineno or node.lineno,
-                code=self.rule.code,
-                message=message,
-            )
-        )
 
 
 def _method_name(call: ast.Call) -> str | None:
@@ -228,15 +211,6 @@ class NegativeShift(_Checker):
 
     rule = LA001
 
-    def visit_Call(self, node: ast.Call) -> None:
-        """Flag method calls named ``shift`` whose period argument is a negative literal."""
-        if _method_name(node) == "shift":
-            argument = node.args[0] if node.args else _keyword(node, "periods")
-            periods = _negative_number(argument)
-            if periods is not None:
-                self._report(node, f"periods={periods:g}")
-        self.generic_visit(node)
-
 
 class BackwardFill(_Checker):
     """LA002: fills, interpolations and reindexes that carry values backward in time."""
@@ -247,51 +221,11 @@ class BackwardFill(_Checker):
     _METHOD_KEYWORD_CALLS = frozenset({"fillna", "reindex", "asfreq", "align"})
     _BACKWARD_DIRECTIONS = frozenset({"backward", "both"})
 
-    def visit_Call(self, node: ast.Call) -> None:
-        """Flag ``.bfill()`` plus the keyword spellings of a backward fill."""
-        name = _method_name(node)
-        if name == "bfill":
-            self._report(node, "bfill()")
-        elif name in self._METHOD_KEYWORD_CALLS:
-            method = _string_value(_keyword(node, "method"))
-            if method is not None and method.lower() in self._BACKWARD_METHODS:
-                self._report(node, f"{name}(method={method!r})")
-        elif name == "interpolate":
-            direction = _string_value(_keyword(node, "limit_direction"))
-            if direction is not None and direction.lower() in self._BACKWARD_DIRECTIONS:
-                self._report(node, f"interpolate(limit_direction={direction!r})")
-        self.generic_visit(node)
-
 
 class CenteredWindow(_Checker):
     """LA003: ``.rolling(..., center=True)``."""
 
     rule = LA003
-
-    def visit_Call(self, node: ast.Call) -> None:
-        """Flag rolling windows explicitly centered on the current observation."""
-        if _method_name(node) == "rolling" and _is_true_literal(_keyword(node, "center")):
-            self._report(node)
-        self.generic_visit(node)
-
-
-_SCOPE_NODES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)
-
-
-def _iter_scope_nodes(body: Sequence[ast.stmt]) -> Iterator[ast.AST]:
-    """Yield every node under ``body`` without descending into nested scopes.
-
-    The nested scope node itself is yielded (so callers can recurse into it
-    deliberately), but its children are not, which keeps ordering checks from
-    comparing line numbers across unrelated scopes.
-    """
-    stack: list[ast.AST] = list(body)
-    while stack:
-        node = stack.pop()
-        yield node
-        if isinstance(node, _SCOPE_NODES):
-            continue
-        stack.extend(ast.iter_child_nodes(node))
 
 
 class FitBeforeSplit(_Checker):
@@ -301,122 +235,17 @@ class FitBeforeSplit(_Checker):
 
     _FIT_METHODS = frozenset({"fit", "fit_transform"})
 
-    def visit_Module(self, node: ast.Module) -> None:
-        """Analyze module scope, then every nested scope in turn."""
-        self._check_scope(node.body)
-
-    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
-        """Analyze a function body as an independent scope."""
-        self._check_scope(node.body)
-
-    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
-        """Analyze an async function body as an independent scope."""
-        self._check_scope(node.body)
-
-    def visit_ClassDef(self, node: ast.ClassDef) -> None:
-        """Analyze a class body as an independent scope."""
-        self._check_scope(node.body)
-
-    def _check_scope(self, body: Sequence[ast.stmt]) -> None:
-        nodes = list(_iter_scope_nodes(body))
-        calls = [node for node in nodes if isinstance(node, ast.Call)]
-        split_lines = [call.lineno for call in calls if _called_name(call) == "train_test_split"]
-        if split_lines:
-            first_split = min(split_lines)
-            for call in calls:
-                if _method_name(call) in self._FIT_METHODS and call.lineno < first_split:
-                    self._report(call, f"split at line {first_split}")
-        for node in nodes:
-            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
-                self.visit(node)
-
 
 class ShuffledSplit(_Checker):
     """LA005: ``train_test_split`` that is not pinned to ``shuffle=False``."""
 
     rule = LA005
 
-    def visit_Call(self, node: ast.Call) -> None:
-        """Flag splits that shuffle, which is the sklearn default."""
-        if _called_name(node) == "train_test_split" and not _has_kwargs_unpacking(node):
-            if not _is_false_literal(_keyword(node, "shuffle")):
-                self._report(node)
-        self.generic_visit(node)
-
 
 class FutureRowIndex(_Checker):
     """LA006: ``series[i + k]`` inside a loop whose target is ``i``."""
 
     rule = LA006
-
-    def __init__(self, path: Path) -> None:
-        super().__init__(path)
-        self._loop_vars: list[frozenset[str]] = []
-
-    def visit_For(self, node: ast.For) -> None:
-        """Track the loop target while walking the loop body."""
-        self._visit_loop(node)
-
-    def visit_AsyncFor(self, node: ast.AsyncFor) -> None:
-        """Track the loop target while walking an async loop body."""
-        self._visit_loop(node)
-
-    def visit_ListComp(self, node: ast.ListComp) -> None:
-        """Comprehensions are loops too; track their targets the same way."""
-        self._visit_comprehension(node, node.generators)
-
-    def visit_SetComp(self, node: ast.SetComp) -> None:
-        """Comprehensions are loops too; track their targets the same way."""
-        self._visit_comprehension(node, node.generators)
-
-    def visit_DictComp(self, node: ast.DictComp) -> None:
-        """Comprehensions are loops too; track their targets the same way."""
-        self._visit_comprehension(node, node.generators)
-
-    def visit_GeneratorExp(self, node: ast.GeneratorExp) -> None:
-        """Comprehensions are loops too; track their targets the same way."""
-        self._visit_comprehension(node, node.generators)
-
-    def visit_Subscript(self, node: ast.Subscript) -> None:
-        """Flag subscripts offset ahead of an active loop variable."""
-        for index in self._index_expressions(node.slice):
-            if self._is_future_offset(index):
-                self._report(node)
-                break
-        self.generic_visit(node)
-
-    @staticmethod
-    def _index_expressions(node: ast.expr) -> Iterator[ast.expr]:
-        if isinstance(node, ast.Tuple):
-            yield from node.elts
-        else:
-            yield node
-
-    def _visit_loop(self, node: ast.For | ast.AsyncFor) -> None:
-        self.visit(node.iter)
-        self._loop_vars.append(_target_names(node.target))
-        for child in (*node.body, *node.orelse):
-            self.visit(child)
-        self._loop_vars.pop()
-
-    def _visit_comprehension(self, node: ast.expr, generators: list[ast.comprehension]) -> None:
-        names: set[str] = set()
-        for generator in generators:
-            names |= _target_names(generator.target)
-        self._loop_vars.append(frozenset(names))
-        self.generic_visit(node)
-        self._loop_vars.pop()
-
-    def _is_future_offset(self, index: ast.expr) -> bool:
-        if not isinstance(index, ast.BinOp) or not isinstance(index.op, ast.Add):
-            return False
-        active = {name for loop_vars in self._loop_vars for name in loop_vars}
-        for operand, other in ((index.left, index.right), (index.right, index.left)):
-            if isinstance(operand, ast.Name) and operand.id in active:
-                # `i + -1` is a look-behind written oddly; only positive offsets look ahead.
-                if _negative_number(other) is None:
-                    return True
-        return False
 
 
 def _target_names(target: ast.expr) -> frozenset[str]:
@@ -431,14 +260,6 @@ class ForwardAsofMerge(_Checker):
 
     _FUTURE_DIRECTIONS = frozenset({"forward", "nearest"})
 
-    def visit_Call(self, node: ast.Call) -> None:
-        """Flag as-of joins whose direction can match a later record."""
-        if _called_name(node) == "merge_asof":
-            direction = _string_value(_keyword(node, "direction"))
-            if direction is not None and direction.lower() in self._FUTURE_DIRECTIONS:
-                self._report(node, f"direction={direction!r}")
-        self.generic_visit(node)
-
 
 CHECKERS: tuple[type[_Checker], ...] = (
     NegativeShift,
@@ -452,6 +273,187 @@ CHECKERS: tuple[type[_Checker], ...] = (
 
 RULES: dict[str, Rule] = {checker.rule.code: checker.rule for checker in CHECKERS}
 ALL_CODES: frozenset[str] = frozenset(RULES)
+
+
+def _run_combined_checks(
+    tree: ast.Module,
+    path: Path,
+    enabled: frozenset[str],
+) -> list[Finding]:
+    """Evaluate every enabled rule during one iterative walk of the tree."""
+    negative_shift = LA001.code in enabled
+    backward_fill = LA002.code in enabled
+    centered_window = LA003.code in enabled
+    fit_before_split = LA004.code in enabled
+    shuffled_split = LA005.code in enabled
+    future_row_index = LA006.code in enabled
+    forward_asof_merge = LA007.code in enabled
+    findings: list[Finding] = []
+    split_lines: list[int | None] = [None]
+    fit_calls: list[list[ast.Call]] = [[]]
+    stack: list[tuple[ast.AST, int | None, frozenset[str]]] = [
+        (tree, 0 if fit_before_split else None, frozenset())
+    ]
+
+    def report(rule: Rule, node: ast.expr, detail: str | None = None) -> None:
+        message = rule.message if detail is None else f"{rule.message} [{detail}]"
+        findings.append(
+            Finding(
+                path=path,
+                line=node.lineno,
+                col=node.col_offset + 1,
+                end_line=node.end_lineno or node.lineno,
+                code=rule.code,
+                message=message,
+            )
+        )
+
+    while stack:
+        node, fit_scope, loop_vars = stack.pop()
+        if isinstance(node, ast.Call):
+            need_method = negative_shift or backward_fill or centered_window or fit_before_split
+            method_name = _method_name(node) if need_method else None
+            need_called = fit_before_split or shuffled_split or forward_asof_merge
+            called_name = _called_name(node) if need_called else None
+
+            if fit_before_split and fit_scope is not None:
+                if called_name == "train_test_split":
+                    previous = split_lines[fit_scope]
+                    split_lines[fit_scope] = (
+                        node.lineno if previous is None else min(previous, node.lineno)
+                    )
+                if method_name in FitBeforeSplit._FIT_METHODS:
+                    fit_calls[fit_scope].append(node)
+
+            if negative_shift and method_name == "shift":
+                argument = node.args[0] if node.args else _keyword(node, "periods")
+                periods = _negative_number(argument)
+                if periods is not None:
+                    report(LA001, node, f"periods={periods:g}")
+
+            if backward_fill:
+                if method_name == "bfill":
+                    report(LA002, node, "bfill()")
+                elif method_name in BackwardFill._METHOD_KEYWORD_CALLS:
+                    method = _string_value(_keyword(node, "method"))
+                    if method is not None and method.lower() in BackwardFill._BACKWARD_METHODS:
+                        report(LA002, node, f"{method_name}(method={method!r})")
+                elif method_name == "interpolate":
+                    direction = _string_value(_keyword(node, "limit_direction"))
+                    if (
+                        direction is not None
+                        and direction.lower() in BackwardFill._BACKWARD_DIRECTIONS
+                    ):
+                        report(LA002, node, f"interpolate(limit_direction={direction!r})")
+
+            if (
+                centered_window
+                and method_name == "rolling"
+                and _is_true_literal(_keyword(node, "center"))
+            ):
+                report(LA003, node)
+
+            if (
+                shuffled_split
+                and called_name == "train_test_split"
+                and not _has_kwargs_unpacking(node)
+                and not _is_false_literal(_keyword(node, "shuffle"))
+            ):
+                report(LA005, node)
+
+            if forward_asof_merge and called_name == "merge_asof":
+                direction = _string_value(_keyword(node, "direction"))
+                if (
+                    direction is not None
+                    and direction.lower() in ForwardAsofMerge._FUTURE_DIRECTIONS
+                ):
+                    report(LA007, node, f"direction={direction!r}")
+
+        elif future_row_index and loop_vars and isinstance(node, ast.Subscript):
+            indexes = node.slice.elts if isinstance(node.slice, ast.Tuple) else (node.slice,)
+            for index in indexes:
+                if not isinstance(index, ast.BinOp) or not isinstance(index.op, ast.Add):
+                    continue
+                for operand, other in (
+                    (index.left, index.right),
+                    (index.right, index.left),
+                ):
+                    if (
+                        isinstance(operand, ast.Name)
+                        and operand.id in loop_vars
+                        and _negative_number(other) is None
+                    ):
+                        report(LA006, node)
+                        break
+                else:
+                    continue
+                break
+
+        children: list[ast.AST] = []
+        for field in node._fields:
+            value = getattr(node, field, None)
+            if isinstance(value, ast.AST):
+                children.append(value)
+            elif isinstance(value, list):
+                for child in value:
+                    if isinstance(child, ast.AST):
+                        children.append(child)
+        if not children:
+            continue
+
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
+            body_ids = {id(child) for child in node.body}
+            if fit_before_split:
+                child_scope = len(split_lines)
+                split_lines.append(None)
+                fit_calls.append([])
+            else:
+                child_scope = None
+            for child in children:
+                stack.append(
+                    (
+                        child,
+                        child_scope if id(child) in body_ids else None,
+                        loop_vars,
+                    )
+                )
+        elif isinstance(node, ast.Lambda):
+            for child in children:
+                stack.append((child, None, loop_vars))
+        elif future_row_index and isinstance(node, ast.For | ast.AsyncFor):
+            active_body = loop_vars | _target_names(node.target)
+            body_ids = {id(child) for child in (*node.body, *node.orelse)}
+            for child in children:
+                child_loop_vars: frozenset[str]
+                if child is node.target:
+                    child_loop_vars = frozenset()
+                elif id(child) in body_ids:
+                    child_loop_vars = active_body
+                else:
+                    child_loop_vars = loop_vars
+                stack.append((child, fit_scope, child_loop_vars))
+        elif future_row_index and isinstance(
+            node,
+            ast.ListComp | ast.SetComp | ast.DictComp | ast.GeneratorExp,
+        ):
+            names: set[str] = set()
+            for generator in node.generators:
+                names |= _target_names(generator.target)
+            active_comprehension = loop_vars | names
+            for child in children:
+                stack.append((child, fit_scope, active_comprehension))
+        else:
+            for child in children:
+                stack.append((child, fit_scope, loop_vars))
+
+    if fit_before_split:
+        for first_split, calls in zip(split_lines, fit_calls, strict=True):
+            if first_split is None:
+                continue
+            for call in calls:
+                if call.lineno < first_split:
+                    report(LA004, call, f"split at line {first_split}")
+    return findings
 
 
 def run_checks(
@@ -476,12 +478,6 @@ def run_checks(
     unknown = enabled - ALL_CODES
     if unknown:
         raise KeyError(f"unknown rule codes: {', '.join(sorted(unknown))}")
-    findings: list[Finding] = []
-    for checker_class in CHECKERS:
-        if checker_class.rule.code not in enabled:
-            continue
-        checker = checker_class(path)
-        checker.visit(tree)
-        findings.extend(checker.findings)
+    findings = _run_combined_checks(tree, path, enabled)
     findings.sort(key=lambda finding: (finding.line, finding.col, finding.code))
     return findings

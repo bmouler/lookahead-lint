@@ -149,11 +149,12 @@ $ lookahead-lint examples/leaky_research.py --format json --select LA004,LA005
 ## How it works
 
 ```mermaid
-flowchart LR; SRC[research files / notebooks] --> AST[ast parse, no execution]; AST --> RU[7 rule visitors LA001–LA007]; RU --> SUP[suppressions + config]; SUP --> REP[report]; REP --> OUT[text / json / github annotations]
+flowchart LR; SRC[research files / notebooks] --> AST[ast parse, no execution]; AST --> RU[single iterative traversal<br/>LA001–LA007]; RU --> SUP[suppressions + config]; SUP --> REP[report]; REP --> OUT[text / json / github annotations]
 ```
 
-Each file is parsed with `ast` and walked by one `NodeVisitor` per rule. No code is imported and
-nothing is executed, so running the linter on someone else's research is safe and instant.
+Each file is parsed with `ast` and traversed once while all seven independent rules evaluate
+their relevant nodes. No code is imported or executed, so running the linter on someone else's
+research is safe.
 
 ### Rules
 
@@ -236,6 +237,20 @@ unparseable file would be the worst possible behaviour for a tool whose value is
 The deterministic property suite exercises rule detection, clean-code composition, analyzer purity,
 and every output format. Static types are checked with strict mypy, and CI enforces 100% statement
 and branch coverage on Linux and macOS with Python 3.11–3.13.
+
+### End-to-end performance
+
+`PYTHONPATH=src python benchmarks/benchmark_analysis.py --samples 15 --warmups 3` parses a
+deterministic 104,934-byte research module, evaluates all seven rules, materializes 1,440
+findings, and renders the default text report. Source generation and interpreter startup are
+outside the timed region.
+
+On an Apple M3 Max with CPython 3.11.12 on 2026-08-15, the frozen baseline
+`05b02286b14a` measured **131.195 ms** median and the single-traversal implementation
+**55.940 ms**, a **2.345x speedup**. Fifteen samples after three warmups produced the same
+SHA-256 `b19761066efde446a2a16b53dea978ad74c2138c75dc84d974296d86064f474b` in both
+runs. These are local in-process timings; rerun with `PYTHONPATH` pointed at the desired
+source worktree.
 
 ### Mutation testing
 

@@ -43,6 +43,29 @@ def test_indirect_call_expression_is_not_treated_as_a_named_call(codes_for) -> N
     assert codes_for("factory()()") == []
 
 
+def test_analysis_walks_lambda_bodies_without_crossing_fit_scopes(codes_for) -> None:
+    assert codes_for(
+        """
+        transform = lambda values: values.shift(-1)
+        scaler.fit(values)
+        train_test_split(values, shuffle=False)
+        """
+    ) == ["LA001", "LA004"]
+
+
+def test_analysis_ignores_non_node_ast_list_fields(codes_for) -> None:
+    assert (
+        codes_for(
+            """
+        def update():
+            global prices, signals
+            prices = signals
+        """
+        )
+        == []
+    )
+
+
 @pytest.mark.parametrize(
     "source",
     [
@@ -278,6 +301,11 @@ def test_la006_covers_every_loop_form(codes_for, source: str) -> None:
             total += close[i : i + 1].sum()
         """,
         "total = close[i + 1]",
+        """
+        for i in range(n):
+            for close[i + 1] in rows:
+                pass
+        """,
     ],
 )
 def test_la006_stays_quiet_outside_a_forward_read(codes_for, source: str) -> None:
