@@ -84,7 +84,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="ignore any [tool.lookahead_lint] table in pyproject.toml",
     )
-    parser.add_argument("--version", action="version", version="lookahead-lint 1.0.0")
+    parser.add_argument("--version", action="version", version="lookahead-lint 1.0.1")
     return parser
 
 

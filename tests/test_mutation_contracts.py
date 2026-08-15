@@ -81,7 +81,7 @@ def test_cli_version_is_stable(capsys: pytest.CaptureFixture[str]) -> None:
     with pytest.raises(SystemExit) as raised:
         main(["--version"])
     assert raised.value.code == 0
-    assert capsys.readouterr().out == "lookahead-lint 1.0.0\n"
+    assert capsys.readouterr().out == "lookahead-lint 1.0.1\n"
 
 
 def test_config_discovery_uses_lowercase_pyproject_name(

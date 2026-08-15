@@ -1,6 +1,6 @@
 [project]
 name = "lookahead-lint"
-version = "1.0.0"
+version = "1.0.1"
 description = "Static analyzer that flags look-ahead bias and target leakage idioms in quantitative research code"
 readme = "README.md"
 requires-python = ">=3.11"

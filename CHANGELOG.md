@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-08-15
+
 - Combined the seven analyzer rule walks into one iterative AST traversal while preserving finding order, suppression, and scope semantics.
 - Added a deterministic end-to-end analysis and text-render benchmark with exact output checksums.
 
